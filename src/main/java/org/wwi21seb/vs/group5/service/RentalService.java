@@ -1,13 +1,8 @@
 package org.wwi21seb.vs.group5.service;
 
 import org.wwi21seb.vs.group5.TwoPhaseCommit.Participant;
-import org.wwi21seb.vs.group5.UDP.Operation;
 import org.wwi21seb.vs.group5.UDP.UDPMessage;
-import org.wwi21seb.vs.group5.dao.CarDAO;
 import org.wwi21seb.vs.group5.dao.RentalDAO;
-import org.wwi21seb.vs.group5.model.Rental;
-
-import java.util.List;
 
 public class RentalService implements Participant {
 
@@ -19,17 +14,43 @@ public class RentalService implements Participant {
 
     @Override
     public UDPMessage prepare(UDPMessage message) {
-        return null;
+        String prepareResultJsonString = rentalDAO.reserveCar(message.getData(), message.getTransactionId());
+
+        // Create a new UDPMessage with the bookingId as payload
+        return new UDPMessage(
+                message.getOperation(),
+                message.getTransactionId(),
+                "RENTAL_CAR_PROVIDER",
+                prepareResultJsonString
+        );
     }
 
     @Override
     public UDPMessage commit(UDPMessage message) {
-        return null;
+        boolean success = rentalDAO.confirmRental(message.getData());
+
+        // Create a new UDPMessage with an acknowledgement as payload
+        String commitResultJsonString = "{\"success\": " + success + "}";
+        return new UDPMessage(
+                message.getOperation(),
+                message.getTransactionId(),
+                "RENTAL_CAR_PROVIDER",
+                commitResultJsonString
+        );
     }
 
     @Override
     public UDPMessage abort(UDPMessage message) {
-        return null;
+        boolean success = rentalDAO.abortRental(message.getData());
+
+        // Create a new UDPMessage with an acknowledgement as payload
+        String commitResultJsonString = "{\"success\": " + success + "}";
+        return new UDPMessage(
+                message.getOperation(),
+                message.getTransactionId(),
+                "RENTAL_CAR_PROVIDER",
+                commitResultJsonString
+        );
     }
 
     /**

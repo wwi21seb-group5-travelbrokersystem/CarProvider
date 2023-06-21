@@ -13,10 +13,8 @@ public class DatabaseConnection {
     private DatabaseConnection() {
     }
 
-    public static Connection getConnection(boolean autoCommit) throws SQLException {
-        Connection conn =  DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-        conn.setAutoCommit(autoCommit);
-        return conn;
+    public static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
     }
 
 }
