@@ -32,6 +32,11 @@ public class RentalService implements Participant {
         return null;
     }
 
+    /**
+     * Get all rentals from the database
+     * @param parsedMessage the parsed UDPMessage
+     * @return a UDPMessage containing all rentals
+     */
     public UDPMessage getRentals(UDPMessage parsedMessage) {
         String rentalsString = rentalDAO.getRentals();
 
@@ -44,8 +49,21 @@ public class RentalService implements Participant {
         );
     }
 
+    /**
+     * Get all available rentals from the database
+     * @param parsedMessage the parsed UDPMessage
+     * @return a UDPMessage containing all available rentals
+     */
     public UDPMessage getAvailableRentals(UDPMessage parsedMessage) {
-        return null;
+        String availableRentalsString = rentalDAO.getAvailableCars(parsedMessage.getData());
+
+        // Create a new UDPMessage with the availableRentalsString as payload
+        return new UDPMessage(
+                parsedMessage.getOperation(),
+                parsedMessage.getTransactionId(),
+                "RENTAL_CAR_PROVIDER",
+                availableRentalsString
+        );
     }
 
 }
