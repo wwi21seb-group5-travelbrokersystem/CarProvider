@@ -18,34 +18,34 @@ public class RentalService implements Participant {
     }
 
     @Override
-    public void prepare(UDPMessage message) {
-
+    public UDPMessage prepare(UDPMessage message) {
+        return null;
     }
 
     @Override
-    public void commit(UDPMessage message) {
-
+    public UDPMessage commit(UDPMessage message) {
+        return null;
     }
 
     @Override
-    public void abort(UDPMessage message) {
-
+    public UDPMessage abort(UDPMessage message) {
+        return null;
     }
 
-    public void getRentals(UDPMessage parsedMessage) {
+    public UDPMessage getRentals(UDPMessage parsedMessage) {
         String rentalsString = rentalDAO.getRentals();
 
         // Create a new UDPMessage with the rentalsString as payload
-        UDPMessage response = new UDPMessage(
+        return new UDPMessage(
                 parsedMessage.getOperation(),
+                parsedMessage.getTransactionId(),
                 "RENTAL_CAR_PROVIDER",
                 rentalsString
         );
-
-        // Send the response to the client
     }
 
-    public void getAvailableRentals(UDPMessage parsedMessage) {
+    public UDPMessage getAvailableRentals(UDPMessage parsedMessage) {
+        return null;
     }
 
 }

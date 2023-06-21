@@ -2,7 +2,6 @@ package org.wwi21seb.vs.group5;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.wwi21seb.vs.group5.UDP.UDPMessage;
-import org.wwi21seb.vs.group5.service.CarService;
 import org.wwi21seb.vs.group5.service.RentalService;
 
 import java.io.IOException;
@@ -18,7 +17,6 @@ public class RentalCarProviderMain {
 
         System.out.println("Rental Car Provider: Initializing services!");
         RentalService rentalService = new RentalService();
-        CarService carService = new CarService();
 
         try (DatagramSocket socket = new DatagramSocket(5001)) {
             System.out.printf("Rental Car Provider: Socket initialized on port %s!%n", socket.getLocalPort());
@@ -35,33 +33,40 @@ public class RentalCarProviderMain {
                 UDPMessage parsedMessage = mapper.readValue(message, UDPMessage.class);
                 System.out.printf("Rental Car Provider: Parsed message: %s%n", parsedMessage);
 
+                UDPMessage response = null;
+
                 switch (parsedMessage.getOperation()) {
                     case PREPARE -> {
                         System.out.println("Rental Car Provider: Renting car!");
-                        rentalService.prepare(parsedMessage);
+                        response = rentalService.prepare(parsedMessage);
                     }
                     case COMMIT -> {
                         System.out.println("Rental Car Provider: Committing transaction!");
-                        rentalService.commit(parsedMessage);
+                        response = rentalService.commit(parsedMessage);
                     }
                     case ABORT -> {
                         System.out.println("Rental Car Provider: Aborting transaction!");
-                        rentalService.abort(parsedMessage);
+                        response = rentalService.abort(parsedMessage);
                     }
                     case GET_BOOKINGS -> {
                         System.out.println("Rental Car Provider: Getting rentals!");
-                        rentalService.getRentals(parsedMessage);
+                        response = rentalService.getRentals(parsedMessage);
                     }
                     case GET_AVAILABILITY -> {
                         System.out.println("Rental Car Provider: Getting available rentals!");
-                        rentalService.getAvailableRentals(parsedMessage);
-                    }
-                    case GET -> {
-                        System.out.println("Rental Car Provider: Getting car!");
-                        carService.getCar(parsedMessage);
+                        response = rentalService.getAvailableRentals(parsedMessage);
                     }
                     default -> System.out.println("Rental Car Provider: Unknown operation!");
                 }
+
+                if (response != null) {
+                    System.out.printf("Rental Car Provider: Sending response: %s%n", response);
+                    byte[] responseBytes = mapper.writeValueAsBytes(response);
+                    DatagramPacket responsePacket = new DatagramPacket(responseBytes, responseBytes.length, packet.getAddress(), packet.getPort());
+                    socket.send(responsePacket);
+                }
+
+                System.out.println("Rental Car Provider: Waiting for message...");
             }
         } catch (SocketException e) {
             System.out.println("Rental Car Provider: Error while initializing socket!");

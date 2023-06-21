@@ -57,6 +57,21 @@ public class RentalDAO implements TransactionContext {
         }
     }
 
+    public void getAvailableCars(UDPMessage message) {
+        PreparedStatement stmt = null;
+        List<Rental> rentals = new ArrayList<>();
+
+        try (Connection conn = DatabaseConnection.getConnection(true)) {
+
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public boolean reserveCar(UDPMessage message) {
+        return false;
+    }
+
     @Override
     public void commit() {
 
