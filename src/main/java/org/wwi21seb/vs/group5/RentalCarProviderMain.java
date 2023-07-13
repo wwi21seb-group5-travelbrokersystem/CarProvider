@@ -1,6 +1,7 @@
 package org.wwi21seb.vs.group5;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.wwi21seb.vs.group5.TwoPhaseCommit.ParticipantContext;
 import org.wwi21seb.vs.group5.UDP.UDPMessage;
 import org.wwi21seb.vs.group5.service.RentalService;
 
@@ -11,7 +12,7 @@ import java.net.SocketException;
 
 public class RentalCarProviderMain {
 
-    public static void main(String[] args) {
+    public synchronized static void main(String[] args) {
         System.out.println("Rental Car Provider: Initializing!");
         ObjectMapper mapper = new ObjectMapper();
 
@@ -21,17 +22,16 @@ public class RentalCarProviderMain {
         try (DatagramSocket socket = new DatagramSocket(5001)) {
             System.out.printf("Rental Car Provider: Socket initialized on port %s!%n", socket.getLocalPort());
 
-            byte[] buffer = new byte[1024];
+            byte[] buffer = new byte[16384];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
             System.out.println("Rental Car Provider: Waiting for message...");
 
             while (true) {
                 socket.receive(packet);
                 String message = new String(packet.getData(), 0, packet.getLength());
-                System.out.printf("Rental Car Provider: Received message: %s%n", message);
 
                 UDPMessage parsedMessage = mapper.readValue(message, UDPMessage.class);
-                System.out.printf("Rental Car Provider: Parsed message: %s%n", parsedMessage);
+                System.out.printf("Rental Car Provider: Received message: %s%n", parsedMessage);
 
                 UDPMessage response = null;
 
@@ -66,7 +66,7 @@ public class RentalCarProviderMain {
                     socket.send(responsePacket);
                 }
 
-                System.out.println("Rental Car Provider: Waiting for message...");
+                System.out.println("%nRental Car Provider: Waiting for message...");
             }
         } catch (SocketException e) {
             System.out.println("Rental Car Provider: Error while initializing socket!");

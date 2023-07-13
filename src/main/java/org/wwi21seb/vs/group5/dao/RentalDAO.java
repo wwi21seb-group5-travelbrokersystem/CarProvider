@@ -1,16 +1,16 @@
 package org.wwi21seb.vs.group5.dao;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.wwi21seb.vs.group5.Model.Car;
 import org.wwi21seb.vs.group5.Model.Rental;
 import org.wwi21seb.vs.group5.Request.AvailabilityRequest;
-import org.wwi21seb.vs.group5.Request.CarReservationRequest;
-import org.wwi21seb.vs.group5.Request.PrepareResult;
+import org.wwi21seb.vs.group5.Request.ReservationRequest;
+import org.wwi21seb.vs.group5.Request.TransactionResult;
 import org.wwi21seb.vs.group5.communication.DatabaseConnection;
 
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -133,44 +133,54 @@ public class RentalDAO {
 
     /**
      * Reserve a car
-     * @param payload the payload of the UDPMessage containing the reservation request
+     * @param request the payload of the UDPMessage containing the reservation request
      * @param transactionId the transaction ID of the reservation
      * @return a JSON string containing the reservation result
      */
-    public String reserveCar(String payload, UUID transactionId) {
+    public UUID reserveCar(ReservationRequest request, UUID transactionId) {
         PreparedStatement stmt = null;
         UUID bookingId = UUID.randomUUID();
 
         try (Connection conn = DatabaseConnection.getConnection()) {
-            CarReservationRequest carReservationRequest = mapper.readValue(payload, CarReservationRequest.class);
-
             // SELECT CAR TO GET DAILY PRICE
             stmt = conn.prepareStatement("SELECT price_per_day FROM cars WHERE car_id = ?");
-            stmt.setObject(1, carReservationRequest.getCarID());
+            stmt.setObject(1, request.getResourceId());
             stmt.executeQuery();
 
             ResultSet resultSet = stmt.getResultSet();
             resultSet.next();
             double dailyPrice = resultSet.getDouble("price_per_day");
 
-            LocalDate startDate = LocalDate.parse(carReservationRequest.getStartDate(), dateFormatter);
-            LocalDate endDate = LocalDate.parse(carReservationRequest.getEndDate(), dateFormatter);
+            // CHECK IF CAR IS AVAILABLE
+            stmt = conn.prepareStatement("SELECT * FROM rentals WHERE car_id = ? AND start_date BETWEEN ? AND ? OR end_date BETWEEN ? AND ?");
+            stmt.setObject(1, request.getResourceId());
+            stmt.setDate(2, Date.valueOf(request.getStartDate()));
+            stmt.setDate(3, Date.valueOf(request.getEndDate()));
+            stmt.setDate(4, Date.valueOf(request.getStartDate()));
+            stmt.setDate(5, Date.valueOf(request.getEndDate()));
+            stmt.executeQuery();
+
+            ResultSet result = stmt.getResultSet();
+            if (result.next()) {
+                return null;
+            }
+
+            // PREPARE RENTAL
+            LocalDate startDate = LocalDate.parse(request.getStartDate(), dateFormatter);
+            LocalDate endDate = LocalDate.parse(request.getEndDate(), dateFormatter);
             double totalPrice = dailyPrice * (startDate.until(endDate).getDays() + 1);
 
             stmt = conn.prepareStatement("INSERT INTO rentals (rental_id, car_id, start_date, end_date, total_price, is_confirmed) VALUES (?, ?, ?, ?, ?, ?)");
             stmt.setObject(1, bookingId);
-            stmt.setObject(2, carReservationRequest.getCarID());
-            stmt.setDate(3, java.sql.Date.valueOf(carReservationRequest.getStartDate()));
-            stmt.setDate(4, java.sql.Date.valueOf(carReservationRequest.getEndDate()));
+            stmt.setObject(2, request.getResourceId());
+            stmt.setDate(3, Date.valueOf(request.getStartDate()));
+            stmt.setDate(4, Date.valueOf(request.getEndDate()));
             stmt.setDouble(5, totalPrice);
             stmt.setBoolean(6, false);
             stmt.executeUpdate();
-            return mapper.writeValueAsString(new PrepareResult(transactionId, bookingId));
+            return bookingId;
         } catch (SQLException e) {
             System.out.println("SQL Exception: " + e.getMessage());
-            return null;
-        } catch (JsonProcessingException e) {
-            System.out.println("JSON Exception: " + e.getMessage());
             return null;
         }
     }
@@ -182,6 +192,8 @@ public class RentalDAO {
      */
     public boolean confirmRental(String payload) {
         PreparedStatement stmt = null;
+
+        /*
 
         try (Connection conn = DatabaseConnection.getConnection()) {
             PrepareResult prepareResult = mapper.readValue(payload, PrepareResult.class);
@@ -196,11 +208,15 @@ public class RentalDAO {
             return false;
         }
 
-        return true;
+         */
+
+        return false;
     }
 
     public boolean abortRental(String payload) {
         PreparedStatement stmt = null;
+
+        /*
 
         try (Connection conn = DatabaseConnection.getConnection()) {
             PrepareResult prepareResult = mapper.readValue(payload, PrepareResult.class);
@@ -215,6 +231,8 @@ public class RentalDAO {
             System.out.println("JSON Exception: " + e.getMessage());
             return false;
         }
+
+         */
 
         return false;
     }
