@@ -2,7 +2,7 @@ package org.wwi21seb.vs.group5.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.platform.commons.logging.LoggerFactory;
+import org.wwi21seb.vs.group5.Logger.LoggerFactory;
 import org.wwi21seb.vs.group5.Request.ReservationRequest;
 import org.wwi21seb.vs.group5.Request.TransactionResult;
 import org.wwi21seb.vs.group5.TwoPhaseCommit.*;
@@ -16,7 +16,7 @@ import java.util.logging.Logger;
 
 public class RentalService {
 
-    private static final Logger LOGGER = Logger.getLogger(RentalService.class.getName());
+    private static final Logger LOGGER = LoggerFactory.setupLogger(RentalService.class.getName());
     private final ConcurrentHashMap<UUID, ParticipantContext> contexts = new ConcurrentHashMap<>();
     private final LogWriter<ParticipantContext> logWriter = new LogWriter<>();
     private static final String CAR_PROIVDER = "CarProvider";
@@ -26,6 +26,13 @@ public class RentalService {
     public RentalService() {
         this.rentalDAO = new RentalDAO();
         this.mapper = new ObjectMapper();
+
+        // Restore the state of the service
+        // This is done by reading the log file and replaying the transactions
+        for (ParticipantContext participantContext : logWriter.readAllLogs()) {
+            LOGGER.log(Level.INFO, "Restoring transaction {0}", participantContext.getTransactionId());
+            contexts.put(participantContext.getTransactionId(), participantContext);
+        }
     }
 
     public UDPMessage prepare(UDPMessage message) {
@@ -47,37 +54,30 @@ public class RentalService {
         BookingContext bookingContext = participantContext.getParticipants().stream().filter(participant -> participant.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow().getBookingContext();
 
         ReservationRequest reservationRequest = new ReservationRequest(bookingContext.getResourceId(), bookingContext.getStartDate(), bookingContext.getEndDate(), bookingContext.getNumberOfPersons());
-        UUID bookingId = rentalDAO.reserveCar(reservationRequest, message.getTransactionId());
+        UUID bookingId = rentalDAO.reserveCar(reservationRequest);
         TransactionResult transactionResult = null;
 
         if (bookingId == null) {
             // If the bookingId is null, the reservation failed
             // We need to set our decision to ABORT and send it to the coordinator
-            participantContext.setParticipants(
-                    participantContext.getParticipants().stream()
-                            .peek(participant -> {
-                                if (participant.getName().equals(CAR_PROIVDER)) {
-
-                                    participant.setVote(Vote.NO);
-                                }
-                            })
-                            .toList()
-            );
+            participantContext.setParticipants(participantContext.getParticipants().stream().peek(participant -> {
+                if (participant.getName().equals(CAR_PROIVDER)) {
+                    participant.setVote(Vote.NO);
+                }
+            }).toList());
 
             transactionResult = new TransactionResult(false);
         } else {
-            participantContext.setParticipants(
-                    participantContext.getParticipants().stream()
-                            .peek(participant -> {
-                                if (participant.getName().equals(CAR_PROIVDER)) {
-                                    participant.setVote(Vote.YES);
-                                }
-                            })
-                            .toList()
-            );
+            participantContext.setParticipants(participantContext.getParticipants().stream().peek(participant -> {
+                if (participant.getName().equals(CAR_PROIVDER)) {
+                    participant.setVote(Vote.YES);
+                }
+            }).toList());
             participantContext.setBookingIdForParticipant(bookingId, CAR_PROIVDER);
             transactionResult = new TransactionResult(true);
         }
+
+        LOGGER.log(Level.INFO, "Prepare rental {0}", transactionResult.isSuccess());
 
         // Update the context in the log
         contexts.put(participantContext.getTransactionId(), participantContext);
@@ -93,38 +93,80 @@ public class RentalService {
             throw new RuntimeException(e);
         }
 
-        return new UDPMessage(
-                message.getOperation(),
-                message.getTransactionId(),
-                CAR_PROIVDER,
-                transactionResultString
-        );
+        return new UDPMessage(message.getOperation(), message.getTransactionId(), CAR_PROIVDER, transactionResultString);
     }
 
     public UDPMessage commit(UDPMessage message) {
-        boolean success = rentalDAO.confirmRental(message.getData());
+        // Get the participantContext from the contexts map
+        ParticipantContext participantContext = contexts.get(message.getTransactionId());
+        participantContext.setTransactionState(TransactionState.COMMIT);
 
-        // Create a new UDPMessage with an acknowledgement as payload
-        String commitResultJsonString = "{\"success\": " + success + "}";
-        return new UDPMessage(
-                message.getOperation(),
-                message.getTransactionId(),
-                CAR_PROIVDER,
-                commitResultJsonString
-        );
+        // Get the participant from the participantContext
+        Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();
+        boolean success = rentalDAO.confirmRental(participant.getBookingContext().getBookingId());
+
+        if (success) {
+            // If the commit was successful, we finish the transaction
+            // by setting our participant status to done
+            participantContext.setParticipants(participantContext.getParticipants().stream().peek(p -> {
+                if (p.getName().equals(CAR_PROIVDER)) {
+                    p.setDone();
+                }
+            }).toList());
+        }
+
+        LOGGER.log(Level.INFO, "Commit rental {0}", success);
+
+        // Update the context in the log
+        contexts.put(participantContext.getTransactionId(), participantContext);
+        logWriter.writeLog(participantContext.getTransactionId(), participantContext);
+
+        // Create a new TransactionResult with the success status
+        TransactionResult transactionResult = new TransactionResult(success);
+        return getSuccessMessage(message, transactionResult);
     }
 
     public UDPMessage abort(UDPMessage message) {
-        boolean success = rentalDAO.abortRental(message.getData());
+        // Get the participantContext from the contexts map
+        ParticipantContext participantContext = contexts.get(message.getTransactionId());
+        participantContext.setTransactionState(TransactionState.ABORT);
 
-        // Create a new UDPMessage with an acknowledgement as payload
-        String commitResultJsonString = "{\"success\": " + success + "}";
-        return new UDPMessage(
-                message.getOperation(),
-                message.getTransactionId(),
-                CAR_PROIVDER,
-                commitResultJsonString
-        );
+        // Get the participant from the participantContext
+        Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();
+        boolean success = rentalDAO.abortRental(participant.getBookingContext().getBookingId());
+
+        LOGGER.log(Level.INFO, "Abort rental {0}", success);
+
+        if (success) {
+            // If the commit was successful, we finish the transaction
+            // by setting our participant status to done
+            participantContext.setParticipants(participantContext.getParticipants().stream().peek(p -> {
+                if (p.getName().equals(CAR_PROIVDER)) {
+                    p.setDone();
+                }
+            }).toList());
+        }
+
+        // Update the context in the log
+        contexts.put(participantContext.getTransactionId(), participantContext);
+        logWriter.writeLog(participantContext.getTransactionId(), participantContext);
+
+        // Create a new TransactionResult with the success status
+        TransactionResult transactionResult = new TransactionResult(success);
+        return getSuccessMessage(message, transactionResult);
+    }
+
+    private UDPMessage getSuccessMessage(UDPMessage message, TransactionResult transactionResult) {
+        String transactionResultString;
+
+        try {
+            transactionResultString = mapper.writeValueAsString(transactionResult);
+        } catch (JsonProcessingException e) {
+            LOGGER.log(Level.SEVERE, "Could not parse TransactionResult to JSON", e);
+            throw new RuntimeException(e);
+        }
+
+        return new UDPMessage(message.getOperation(), message.getTransactionId(), CAR_PROIVDER, transactionResultString);
     }
 
     /**
@@ -137,12 +179,7 @@ public class RentalService {
         String rentalsString = rentalDAO.getRentals();
 
         // Create a new UDPMessage with the rentalsString as payload
-        return new UDPMessage(
-                parsedMessage.getOperation(),
-                parsedMessage.getTransactionId(),
-                CAR_PROIVDER,
-                rentalsString
-        );
+        return new UDPMessage(parsedMessage.getOperation(), parsedMessage.getTransactionId(), CAR_PROIVDER, rentalsString);
     }
 
     /**
@@ -155,12 +192,7 @@ public class RentalService {
         String availableRentalsString = rentalDAO.getAvailableCars(parsedMessage.getData());
 
         // Create a new UDPMessage with the availableRentalsString as payload
-        return new UDPMessage(
-                parsedMessage.getOperation(),
-                parsedMessage.getTransactionId(),
-                CAR_PROIVDER,
-                availableRentalsString
-        );
+        return new UDPMessage(parsedMessage.getOperation(), parsedMessage.getTransactionId(), CAR_PROIVDER, availableRentalsString);
     }
 
 }

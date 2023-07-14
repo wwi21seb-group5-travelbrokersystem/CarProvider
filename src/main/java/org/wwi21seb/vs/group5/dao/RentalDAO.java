@@ -2,6 +2,7 @@ package org.wwi21seb.vs.group5.dao;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.wwi21seb.vs.group5.Logger.LoggerFactory;
 import org.wwi21seb.vs.group5.Model.Car;
 import org.wwi21seb.vs.group5.Model.Rental;
 import org.wwi21seb.vs.group5.Request.AvailabilityRequest;
@@ -17,9 +18,11 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.logging.Logger;
 
 public class RentalDAO {
 
+    private final Logger LOGGER = LoggerFactory.setupLogger(RentalDAO.class.getName());
     private final ObjectMapper mapper;
     private final DateTimeFormatter dateFormatter;
 
@@ -74,12 +77,13 @@ public class RentalDAO {
                 rentals.add(rental);
             }
 
+            stmt.close();
             return serializeRentals(rentals);
         } catch (SQLException e) {
-            System.out.println("Error while getting rentals: " + e.getMessage());
+            LOGGER.severe("Error while getting rentals: " + e.getMessage());
             throw new RuntimeException(e);
         } catch (JsonProcessingException e) {
-            System.out.println("Error while serializing rentals: " + e.getMessage());
+            LOGGER.severe("Error while serializing rentals: " + e.getMessage());
             throw new RuntimeException(e);
         }
     }
@@ -120,13 +124,14 @@ public class RentalDAO {
                 cars.add(car);
             }
 
+            stmt.close();
             return serializeCars(cars);
         } catch (SQLException e) {
-            System.out.println("Error while getting available cars: " + e.getMessage());
+            LOGGER.severe("Error while getting available cars: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException(e);
         } catch (JsonProcessingException e) {
-            System.out.println("Error while serializing available cars: " + e.getMessage());
+            LOGGER.severe("Error while serializing available cars: " + e.getMessage());
             throw new RuntimeException(e);
         }
     }
@@ -134,10 +139,9 @@ public class RentalDAO {
     /**
      * Reserve a car
      * @param request the payload of the UDPMessage containing the reservation request
-     * @param transactionId the transaction ID of the reservation
      * @return a JSON string containing the reservation result
      */
-    public UUID reserveCar(ReservationRequest request, UUID transactionId) {
+    public UUID reserveCar(ReservationRequest request) {
         PreparedStatement stmt = null;
         UUID bookingId = UUID.randomUUID();
 
@@ -178,63 +182,50 @@ public class RentalDAO {
             stmt.setDouble(5, totalPrice);
             stmt.setBoolean(6, false);
             stmt.executeUpdate();
-            return bookingId;
+
+            stmt.close();
         } catch (SQLException e) {
-            System.out.println("SQL Exception: " + e.getMessage());
+            LOGGER.severe("Error while reserving car: " + e.getMessage());
             return null;
         }
+
+        return bookingId;
     }
 
     /**
      * Confirm a reservation
-     * @param payload the payload of the UDPMessage containing the rental id
+     * @param bookingId the booking ID of the reservation
      * @return a boolean indicating whether the reservation was confirmed
      */
-    public boolean confirmRental(String payload) {
+    public boolean confirmRental(UUID bookingId) {
         PreparedStatement stmt = null;
 
-        /*
-
         try (Connection conn = DatabaseConnection.getConnection()) {
-            PrepareResult prepareResult = mapper.readValue(payload, PrepareResult.class);
             stmt = conn.prepareStatement("UPDATE rentals SET is_confirmed = true WHERE rental_id = ?");
-            stmt.setObject(1, prepareResult.getResourceId(), java.sql.Types.OTHER);
+            stmt.setObject(1, bookingId, java.sql.Types.OTHER);
             stmt.executeUpdate();
+            stmt.close();
         } catch (SQLException e) {
-            System.out.println("SQL Exception: " + e.getMessage());
-            return false;
-        } catch (JsonProcessingException e) {
-            System.out.println("JSON Exception: " + e.getMessage());
+            LOGGER.severe("Error while confirming rental: " + e.getMessage());
             return false;
         }
 
-         */
-
-        return false;
+        return true;
     }
 
-    public boolean abortRental(String payload) {
+    public boolean abortRental(UUID bookingId) {
         PreparedStatement stmt = null;
 
-        /*
-
         try (Connection conn = DatabaseConnection.getConnection()) {
-            PrepareResult prepareResult = mapper.readValue(payload, PrepareResult.class);
-
             stmt = conn.prepareStatement("DELETE FROM rentals WHERE rental_id = ?");
-            stmt.setObject(1, prepareResult.getResourceId(), java.sql.Types.OTHER);
+            stmt.setObject(1, bookingId, java.sql.Types.OTHER);
             stmt.executeUpdate();
         } catch (SQLException e) {
-            System.out.println("SQL Exception: " + e.getMessage());
-            return false;
-        } catch (JsonProcessingException e) {
-            System.out.println("JSON Exception: " + e.getMessage());
+            LOGGER.severe("Error while aborting rental: " + e.getMessage());
             return false;
         }
 
-         */
-
-        return false;
+        return true;
     }
 
 }
