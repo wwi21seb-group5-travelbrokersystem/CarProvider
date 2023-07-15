@@ -30,7 +30,7 @@ public class RentalService {
         // Restore the state of the service
         // This is done by reading the log file and replaying the transactions
         for (ParticipantContext participantContext : logWriter.readAllLogs()) {
-            LOGGER.log(Level.INFO, "Restoring transaction {0}", participantContext.getTransactionId());
+            LOGGER.log(Level.INFO, "Restoring transaction {0}", participantContext);
             contexts.put(participantContext.getTransactionId(), participantContext);
         }
     }
@@ -49,9 +49,13 @@ public class RentalService {
         ParticipantContext participantContext = new ParticipantContext(coordinatorContext);
         contexts.put(participantContext.getTransactionId(), participantContext);
         logWriter.writeLog(participantContext.getTransactionId(), participantContext);
+        LOGGER.log(Level.INFO, "Prepare Transaction {0}", participantContext);
+
+        // Get participant
+        Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();
 
         // Get the bookingContext of the car provider
-        BookingContext bookingContext = participantContext.getParticipants().stream().filter(participant -> participant.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow().getBookingContext();
+        BookingContext bookingContext = participant.getBookingContext();
 
         ReservationRequest reservationRequest = new ReservationRequest(bookingContext.getResourceId(), bookingContext.getStartDate(), bookingContext.getEndDate(), bookingContext.getNumberOfPersons());
         UUID bookingId = rentalDAO.reserveCar(reservationRequest);
@@ -60,19 +64,10 @@ public class RentalService {
         if (bookingId == null) {
             // If the bookingId is null, the reservation failed
             // We need to set our decision to ABORT and send it to the coordinator
-            participantContext.setParticipants(participantContext.getParticipants().stream().peek(participant -> {
-                if (participant.getName().equals(CAR_PROIVDER)) {
-                    participant.setVote(Vote.NO);
-                }
-            }).toList());
-
+            participant.setVote(Vote.NO);
             transactionResult = new TransactionResult(false);
         } else {
-            participantContext.setParticipants(participantContext.getParticipants().stream().peek(participant -> {
-                if (participant.getName().equals(CAR_PROIVDER)) {
-                    participant.setVote(Vote.YES);
-                }
-            }).toList());
+            participant.setVote(Vote.YES);
             participantContext.setBookingIdForParticipant(bookingId, CAR_PROIVDER);
             transactionResult = new TransactionResult(true);
         }
@@ -80,45 +75,37 @@ public class RentalService {
         LOGGER.log(Level.INFO, "Prepare rental {0}", transactionResult.isSuccess());
 
         // Update the context in the log
-        contexts.put(participantContext.getTransactionId(), participantContext);
         logWriter.writeLog(participantContext.getTransactionId(), participantContext);
-
-        // Create a new UDPMessage with the bookingId as payload
-        String transactionResultString = "";
-
-        try {
-            transactionResultString = mapper.writeValueAsString(transactionResult);
-        } catch (JsonProcessingException e) {
-            LOGGER.log(Level.SEVERE, "Could not parse TransactionResult to JSON", e);
-            throw new RuntimeException(e);
-        }
-
-        return new UDPMessage(message.getOperation(), message.getTransactionId(), CAR_PROIVDER, transactionResultString);
+        return getSuccessMessage(message, transactionResult);
     }
 
     public UDPMessage commit(UDPMessage message) {
         // Get the participantContext from the contexts map
         ParticipantContext participantContext = contexts.get(message.getTransactionId());
         participantContext.setTransactionState(TransactionState.COMMIT);
+        LOGGER.log(Level.INFO, "Commit Transaction {0}", participantContext);
 
         // Get the participant from the participantContext
         Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();
+
+        if (participant.isDone()) {
+            // Double check if the transaction was already committed previously
+            // If so, return a TransactionResult with success = true because
+            // the transaction was already committed
+            TransactionResult transactionResult = new TransactionResult(true);
+            return getSuccessMessage(message, transactionResult);
+        }
+
         boolean success = rentalDAO.confirmRental(participant.getBookingContext().getBookingId());
+        LOGGER.log(Level.INFO, "Commit rental {0}", success);
 
         if (success) {
             // If the commit was successful, we finish the transaction
             // by setting our participant status to done
-            participantContext.setParticipants(participantContext.getParticipants().stream().peek(p -> {
-                if (p.getName().equals(CAR_PROIVDER)) {
-                    p.setDone();
-                }
-            }).toList());
+            participant.setDone();
         }
 
-        LOGGER.log(Level.INFO, "Commit rental {0}", success);
-
         // Update the context in the log
-        contexts.put(participantContext.getTransactionId(), participantContext);
         logWriter.writeLog(participantContext.getTransactionId(), participantContext);
 
         // Create a new TransactionResult with the success status
@@ -130,25 +117,29 @@ public class RentalService {
         // Get the participantContext from the contexts map
         ParticipantContext participantContext = contexts.get(message.getTransactionId());
         participantContext.setTransactionState(TransactionState.ABORT);
+        LOGGER.log(Level.INFO, "Abort Transaction {0}", participantContext);
 
         // Get the participant from the participantContext
         Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();
-        boolean success = rentalDAO.abortRental(participant.getBookingContext().getBookingId());
 
+        if (participant.isDone()) {
+            // Double check if the transaction was already aborted previously
+            // If so, return a TransactionResult with success = true because
+            // the transaction was already aborted
+            TransactionResult transactionResult = new TransactionResult(true);
+            return getSuccessMessage(message, transactionResult);
+        }
+
+        boolean success = rentalDAO.abortRental(participant.getBookingContext().getBookingId());
         LOGGER.log(Level.INFO, "Abort rental {0}", success);
 
         if (success) {
             // If the commit was successful, we finish the transaction
             // by setting our participant status to done
-            participantContext.setParticipants(participantContext.getParticipants().stream().peek(p -> {
-                if (p.getName().equals(CAR_PROIVDER)) {
-                    p.setDone();
-                }
-            }).toList());
+            participant.setDone();
         }
 
         // Update the context in the log
-        contexts.put(participantContext.getTransactionId(), participantContext);
         logWriter.writeLog(participantContext.getTransactionId(), participantContext);
 
         // Create a new TransactionResult with the success status

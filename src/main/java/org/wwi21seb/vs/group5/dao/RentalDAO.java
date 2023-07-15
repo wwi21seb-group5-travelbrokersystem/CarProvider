@@ -10,11 +10,8 @@ import org.wwi21seb.vs.group5.Request.ReservationRequest;
 import org.wwi21seb.vs.group5.Request.TransactionResult;
 import org.wwi21seb.vs.group5.communication.DatabaseConnection;
 
-import java.sql.Connection;
+import java.sql.*;
 import java.sql.Date;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -157,7 +154,7 @@ public class RentalDAO {
 
             // CHECK IF CAR IS AVAILABLE
             stmt = conn.prepareStatement("SELECT * FROM rentals WHERE car_id = ? AND start_date BETWEEN ? AND ? OR end_date BETWEEN ? AND ?");
-            stmt.setObject(1, request.getResourceId());
+            stmt.setObject(1, request.getResourceId(), Types.OTHER);
             stmt.setDate(2, Date.valueOf(request.getStartDate()));
             stmt.setDate(3, Date.valueOf(request.getEndDate()));
             stmt.setDate(4, Date.valueOf(request.getStartDate()));
@@ -175,7 +172,7 @@ public class RentalDAO {
             double totalPrice = dailyPrice * (startDate.until(endDate).getDays() + 1);
 
             stmt = conn.prepareStatement("INSERT INTO rentals (rental_id, car_id, start_date, end_date, total_price, is_confirmed) VALUES (?, ?, ?, ?, ?, ?)");
-            stmt.setObject(1, bookingId);
+            stmt.setObject(1, bookingId, Types.OTHER);
             stmt.setObject(2, request.getResourceId());
             stmt.setDate(3, Date.valueOf(request.getStartDate()));
             stmt.setDate(4, Date.valueOf(request.getEndDate()));
@@ -202,7 +199,7 @@ public class RentalDAO {
 
         try (Connection conn = DatabaseConnection.getConnection()) {
             stmt = conn.prepareStatement("UPDATE rentals SET is_confirmed = true WHERE rental_id = ?");
-            stmt.setObject(1, bookingId, java.sql.Types.OTHER);
+            stmt.setObject(1, bookingId, Types.OTHER);
             stmt.executeUpdate();
             stmt.close();
         } catch (SQLException e) {
@@ -218,7 +215,7 @@ public class RentalDAO {
 
         try (Connection conn = DatabaseConnection.getConnection()) {
             stmt = conn.prepareStatement("DELETE FROM rentals WHERE rental_id = ?");
-            stmt.setObject(1, bookingId, java.sql.Types.OTHER);
+            stmt.setObject(1, bookingId, Types.OTHER);
             stmt.executeUpdate();
         } catch (SQLException e) {
             LOGGER.severe("Error while aborting rental: " + e.getMessage());
