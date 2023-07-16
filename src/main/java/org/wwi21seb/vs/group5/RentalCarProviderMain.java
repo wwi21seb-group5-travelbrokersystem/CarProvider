@@ -10,7 +10,7 @@ public class RentalCarProviderMain {
     private static final Logger LOGGER = LoggerFactory.setupLogger(RentalCarProviderMain.class.getName());
 
     public static void main(String[] args) {
-        LOGGER.info("Starting HotelRoomProvider");
+        LOGGER.info("Starting RentalCarProvider...");
         RentalService rentalService = new RentalService();
         rentalService.start();
     }
