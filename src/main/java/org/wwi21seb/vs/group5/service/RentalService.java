@@ -30,7 +30,7 @@ public class RentalService {
         // Restore the state of the service
         // This is done by reading the log file and replaying the transactions
         for (ParticipantContext participantContext : logWriter.readAllLogs()) {
-            LOGGER.log(Level.INFO, "Restoring transaction {0}", participantContext);
+            LOGGER.log(Level.INFO, "Restoring transaction {0}", participantContext.getTransactionId());
             contexts.put(participantContext.getTransactionId(), participantContext);
         }
     }
@@ -49,7 +49,7 @@ public class RentalService {
         ParticipantContext participantContext = new ParticipantContext(coordinatorContext);
         contexts.put(participantContext.getTransactionId(), participantContext);
         logWriter.writeLog(participantContext.getTransactionId(), participantContext);
-        LOGGER.log(Level.INFO, "Prepare Transaction {0}", participantContext);
+        LOGGER.log(Level.INFO, "Prepare Transaction {0}", participantContext.getTransactionId());
 
         // Get participant
         Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();
@@ -82,8 +82,19 @@ public class RentalService {
     public UDPMessage commit(UDPMessage message) {
         // Get the participantContext from the contexts map
         ParticipantContext participantContext = contexts.get(message.getTransactionId());
+
+        if (participantContext == null) {
+            // If the participantContext is null, the transaction is unknown to our service
+            // This is because there was a prepare request in which we weren't available
+            // To the coordinator, this means that the transaction was aborted which is why
+            // we need to return a successful TransactionResult to let the coordinator finish
+            // its protocol
+            TransactionResult transactionResult = new TransactionResult(true);
+            return getSuccessMessage(message, transactionResult);
+        }
+
         participantContext.setTransactionState(TransactionState.COMMIT);
-        LOGGER.log(Level.INFO, "Commit Transaction {0}", participantContext);
+        LOGGER.log(Level.INFO, "Commit Transaction {0}", participantContext.getTransactionId());
 
         // Get the participant from the participantContext
         Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();
@@ -116,8 +127,19 @@ public class RentalService {
     public UDPMessage abort(UDPMessage message) {
         // Get the participantContext from the contexts map
         ParticipantContext participantContext = contexts.get(message.getTransactionId());
+
+        if (participantContext == null) {
+            // If the participantContext is null, the transaction is unknown to our service
+            // This is because there was a prepare request in which we weren't available
+            // To the coordinator, this means that the transaction was aborted which is why
+            // we need to return a successful TransactionResult to let the coordinator finish
+            // its protocol
+            TransactionResult transactionResult = new TransactionResult(true);
+            return getSuccessMessage(message, transactionResult);
+        }
+
         participantContext.setTransactionState(TransactionState.ABORT);
-        LOGGER.log(Level.INFO, "Abort Transaction {0}", participantContext);
+        LOGGER.log(Level.INFO, "Abort Transaction {0}", participantContext.getTransactionId());
 
         // Get the participant from the participantContext
         Participant participant = participantContext.getParticipants().stream().filter(p -> p.getName().equals(CAR_PROIVDER)).findFirst().orElseThrow();

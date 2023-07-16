@@ -153,16 +153,18 @@ public class RentalDAO {
             double dailyPrice = resultSet.getDouble("price_per_day");
 
             // CHECK IF CAR IS AVAILABLE
-            stmt = conn.prepareStatement("SELECT * FROM rentals WHERE car_id = ? AND start_date BETWEEN ? AND ? OR end_date BETWEEN ? AND ?");
-            stmt.setObject(1, request.getResourceId(), Types.OTHER);
+            LOGGER.info("Checking if car is available: " + request.getResourceId());
+            stmt = conn.prepareStatement("SELECT * FROM rentals WHERE car_id = ? AND ((start_date <= ? AND end_date >= ?) OR (start_date <= ? AND end_date >= ?))");
+            stmt.setObject(1, request.getResourceId());
             stmt.setDate(2, Date.valueOf(request.getStartDate()));
             stmt.setDate(3, Date.valueOf(request.getEndDate()));
             stmt.setDate(4, Date.valueOf(request.getStartDate()));
             stmt.setDate(5, Date.valueOf(request.getEndDate()));
             stmt.executeQuery();
 
-            ResultSet result = stmt.getResultSet();
-            if (result.next()) {
+            resultSet = stmt.getResultSet();
+            if (resultSet.next()) {
+                LOGGER.info("Car is not available " + resultSet.getString("car_id"));
                 return null;
             }
 
@@ -172,7 +174,7 @@ public class RentalDAO {
             double totalPrice = dailyPrice * (startDate.until(endDate).getDays() + 1);
 
             stmt = conn.prepareStatement("INSERT INTO rentals (rental_id, car_id, start_date, end_date, total_price, is_confirmed) VALUES (?, ?, ?, ?, ?, ?)");
-            stmt.setObject(1, bookingId, Types.OTHER);
+            stmt.setObject(1, bookingId);
             stmt.setObject(2, request.getResourceId());
             stmt.setDate(3, Date.valueOf(request.getStartDate()));
             stmt.setDate(4, Date.valueOf(request.getEndDate()));
